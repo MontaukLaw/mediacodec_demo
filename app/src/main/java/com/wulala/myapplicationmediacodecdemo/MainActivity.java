@@ -49,6 +49,8 @@ public class MainActivity extends AppCompatActivity implements TextureView.Surfa
 
     private static final String TAG = MainActivity.class.getSimpleName();
 
+    MyDecoder myDecoder;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -61,7 +63,7 @@ public class MainActivity extends AppCompatActivity implements TextureView.Surfa
         mMovieView.setSurfaceTextureListener(this);
 
         // readTextFileStream();
-        readH264FileStream();
+
 
         // initExtractor();
 
@@ -94,26 +96,40 @@ public class MainActivity extends AppCompatActivity implements TextureView.Surfa
         int dateLen;
         byte[] data;
 
-
     }
 
     Packet packet;
 
     @Override
     public void onSurfaceTextureAvailable(@NonNull SurfaceTexture surface, int width, int height) {
+
         // 拿到SurfaceTexture，作为视频解码器的数据输出。
         // 注意：在SurfaceTexture available之后，再进行解码。
-        mSurfaceTexture = surface;    //开始解码
+        mSurfaceTexture = surface;
         // decode();
         // myExtractor = new MyExtractor("q.mp4", this);
 
-        setDecoderCallback(mDecoder);
-    }
+        // 初始化解码器格式
+        initDecoderFormat();
 
+        // 设置异步解码的回调
+        // setDecoderCallback(mDecoder);
+
+        myDecoder = new MyDecoder(mDecoder, mMediaExtractor, mVideoFormat, inputStream, this);
+
+        // 设置渲染的颜色格式为Surface。
+        mVideoFormat.setInteger(MediaFormat.KEY_COLOR_FORMAT,
+                MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface);
+
+        // 设置解码数据到指定的Surface上。
+        mDecoder.configure(mVideoFormat, new Surface(mSurfaceTexture), null, 0);
+        mDecoder.start();
+    }
 
     private void setDecoderCallback(MediaCodec mDecoder) {
 
         try {
+            // 读取文件
             inputStream = getResources().getAssets().open("test.h264");
             // 先读出头
             inputStream.read();
@@ -125,15 +141,8 @@ public class MainActivity extends AppCompatActivity implements TextureView.Surfa
             ioe.printStackTrace();
         }
 
-        mVideoFormat = new MediaFormat();
-
-        mVideoFormat.setString(MediaFormat.KEY_MIME, "video/avc");
-        mVideoFormat.setInteger(MediaFormat.KEY_FRAME_RATE, 30);
-
-        mVideoFormat.setInteger(MediaFormat.KEY_WIDTH, 1920);
-        mVideoFormat.setInteger(MediaFormat.KEY_HEIGHT, 1080);
-
         // API 21以上，通过异步模式进行解码
+        // 设置异步解码回调
         mDecoder.setCallback(new MediaCodec.Callback() {
 
             @Override
@@ -202,16 +211,17 @@ public class MainActivity extends AppCompatActivity implements TextureView.Surfa
                     codec.releaseOutputBuffer(index, false);
                     return;
                 }
-                    /*
-                        这个地方先暂时认为每一帧的间隔是30ms，正常情况下，需要根据实际的视频帧的时间标记来计算每一帧的时间点。
-                        因为视频帧的时间点是相对时间，正常第一帧是0，第二帧比如是第5ms。
-                        基本思路是：取出第一帧视频数据，记住当前时间点，然后读取第二帧视频数据，再用当前时间点减去第一帧时间点，看看相对时间是多少，有没有
-                        达到第二帧自己带的相对时间点。如果没有，则sleep一段时间，然后再去检查。直到大于或等于第二帧自带的时间点之后，进行视频渲染。
-                     */
+                /*
+                    这个地方先暂时认为每一帧的间隔是30ms，正常情况下，需要根据实际的视频帧的时间标记来计算每一帧的时间点。
+                    因为视频帧的时间点是相对时间，正常第一帧是0，第二帧比如是第5ms。
+                    基本思路是：取出第一帧视频数据，记住当前时间点，然后读取第二帧视频数据，再用当前时间点减去第一帧时间点，看看相对时间是多少，有没有
+                    达到第二帧自己带的相对时间点。如果没有，则sleep一段时间，然后再去检查。直到大于或等于第二帧自带的时间点之后，进行视频渲染。
+                */
                 try {
                     Thread.sleep(25);
                 } catch (InterruptedException e) {
                 }
+
                 codec.releaseOutputBuffer(index, true);
 
                 //如果视频数据已经读到结尾，则调用MediaExtractor的seekTo，跳转到视频开头，并且重置解码器。
@@ -240,19 +250,21 @@ public class MainActivity extends AppCompatActivity implements TextureView.Surfa
 
         });
 
-        // 设置渲染的颜色格式为Surface。
-        mVideoFormat.setInteger(MediaFormat.KEY_COLOR_FORMAT,
-                MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface);
-
-        // 设置解码数据到指定的Surface上。
-        mDecoder.configure(mVideoFormat, new Surface(mSurfaceTexture), null, 0);
-        mDecoder.start();
     }
 
-    private void readH264FileStream() {
+    private void initDecoderFormat() {
         try {
+            // 设置解码器解码的类型是视频
+            // 因为是裸数据流
             mDecoder = MediaCodec.createDecoderByType("video/avc");
             // setDecoderCallback(mDecoder);
+            mVideoFormat = new MediaFormat();
+
+            mVideoFormat.setString(MediaFormat.KEY_MIME, "video/avc");
+            mVideoFormat.setInteger(MediaFormat.KEY_FRAME_RATE, 30);
+
+            mVideoFormat.setInteger(MediaFormat.KEY_WIDTH, 1920);
+            mVideoFormat.setInteger(MediaFormat.KEY_HEIGHT, 1080);
 
         } catch (IOException ioe) {
             ioe.printStackTrace();
